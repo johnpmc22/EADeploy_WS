@@ -1,0 +1,90 @@
+pool:
+  name: Hosted
+  demands: maven
+
+#Your build pipeline references an undefined variable named ‘Parameters.mavenPOMFile’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+
+steps:
+- task: Maven@3
+  displayName: 'Maven pom.xml'
+  inputs:
+    mavenPomFile: '$(Parameters.mavenPOMFile)'
+    goals: 'clean package'
+
+- task: CopyFiles@2
+  displayName: 'Copy Files to: $(build.artifactstagingdirectory)'
+  inputs:
+    SourceFolder: '$(system.defaultworkingdirectory)'
+    Contents: |
+     **\target\BPRestWS-1.0-SNAPSHOT.war
+     **\target\BPRestWS-1.0-SNAPSHOT-hollow-swarm.jar
+    TargetFolder: '$(build.artifactstagingdirectory)'
+  condition: succeededOrFailed()
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: JAVA_APP'
+  inputs:
+    PathtoPublish: '$(build.artifactstagingdirectory)'
+    ArtifactName: 'JAVA_APP'
+  condition: succeededOrFailed()
+
+pool:
+  name: Hosted Ubuntu 1604
+variables:
+  hollowImageName: 'bprestws-hollow'
+  version: 'latest'
+
+steps:
+- task: DownloadBuildArtifacts@0
+  displayName: 'Download Build Artifacts'
+  inputs:
+    buildType: specific
+    project: '29377de1-64c9-4216-8318-66d7a798225d'
+    pipeline: 6
+    specificBuildWithTriggering: true
+    artifactName: 'JAVA_APP'
+    downloadPath: '$(System.DefaultWorkingDirectory)'
+
+- task: Docker@1
+  displayName: 'Build Hollow Image'
+  inputs:
+    azureSubscriptionEndpoint: 'Free Trial (116880b6-281d-4a55-8e99-82cce51e6f41)'
+    azureContainerRegistry: johnmcacr.azurecr.io
+    dockerFile: '**/Dockerfile-hollow'
+    imageName: '$(hollowImageName):$(version)'
+
+- task: Docker@1
+  displayName: 'Push Hollow Image'
+  inputs:
+    azureSubscriptionEndpoint: 'Free Trial (116880b6-281d-4a55-8e99-82cce51e6f41)'
+    azureContainerRegistry: johnmcacr.azurecr.io
+    command: 'Push an image'
+    imageName: '$(hollowImageName):$(version)'
+
+- task: Docker@1
+  displayName: 'Build Thin Image'
+  inputs:
+    azureSubscriptionEndpoint: 'Free Trial (116880b6-281d-4a55-8e99-82cce51e6f41)'
+    azureContainerRegistry: johnmcacr.azurecr.io
+    dockerFile: '**/Dockerfile-thinwar'
+    imageName: '$(thinImageName):$(version)'
+
+- task: Docker@1
+  displayName: 'Push Thin Image'
+  inputs:
+    azureSubscriptionEndpoint: 'Free Trial (116880b6-281d-4a55-8e99-82cce51e6f41)'
+    azureContainerRegistry: johnmcacr.azurecr.io
+    command: 'Push an image'
+    imageName: '$(thinImageName):$(version)'
+
+- script: |
+   sed -i 's/bprestws-thinwar:latest/$(thinImageName):$(version)/g' create-thin-service-manifest.yaml
+   
+  displayName: 'Command Line Script'
+
+- task: PublishPipelineArtifact@0
+  displayName: 'Publish Artifact k8s YAML'
+  inputs:
+    artifactName: YAML
+    targetPath: 'create-thin-service-manifest.yaml'
+
