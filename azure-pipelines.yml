@@ -87,4 +87,3 @@ steps:
   inputs:
     artifactName: YAML
     targetPath: 'create-thin-service-manifest.yaml'
-
